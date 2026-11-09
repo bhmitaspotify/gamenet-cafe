@@ -127,7 +127,7 @@ const state = {
   tab: 'order',
   customers: [],
   history: [],
-  order: { customerId: null, customerQuery: '', items: [], itemName:'', itemPrice:'' },
+  openOrders: [],
   loading: false,
   modal: null,
   toast: null,
@@ -150,7 +150,10 @@ async function loadCustomers(search){
   state.customers = await sb(q);
 }
 async function loadHistory(){
-  state.history = await sb('cafe_orders?select=*&order=created_at.desc&limit=200');
+  state.history = await sb('cafe_orders?status=eq.completed&select=*&order=created_at.desc&limit=200');
+}
+async function loadOpenOrders(){
+  state.openOrders = await sb('cafe_orders?status=eq.open&select=*&order=created_at.asc&limit=200');
 }
 function customer(id){ return state.customers.find(c => String(c.id) === String(id)); }
 function isAdmin(){ return !!state.staff && state.staff.username === 'arvin'; }
@@ -200,53 +203,75 @@ async function createCustomer(name, phone){
   }
 }
 
-// ---------- Order (cart) actions ----------
-function selectOrderCustomer(id){
-  state.order.customerId = id;
-  state.order.customerQuery = '';
-  render();
-}
-function changeOrderCustomer(){
-  state.order.customerId = null;
-  render();
-}
-function addOrderItem(){
-  const name = (state.order.itemName||'').trim();
-  const price = Number(state.order.itemPrice||0);
-  if (!name || !price){ showToast('نام و قیمت را وارد کنید'); return; }
-  state.order.items.push({ name, price });
-  state.order.itemName = '';
-  state.order.itemPrice = '';
-  render();
-}
-function removeOrderItem(idx){
-  state.order.items.splice(idx, 1);
-  render();
-}
-async function checkoutOrder(paymentType){
+// ---------- Open order (running tab) actions ----------
+async function startOpenOrder(customerId){
   if (state.submitting) return;
-  const items = state.order.items;
-  if (!items.length){ showToast('حداقل یک آیتم اضافه کنید'); return; }
-  const customerId = state.order.customerId;
-  if (!customerId){ showToast('مشتری را انتخاب کنید'); return; }
-  const total = items.reduce((a,i)=>a+Number(i.price||0),0);
   state.submitting = true; render();
   try{
-    const paid = paymentType !== 'unpaid';
     await sb('cafe_orders', { method:'POST', body:{
-      customer_id: customerId, items, total, payment_type: paymentType, paid, staff_username: state.staff.username,
+      customer_id: customerId, items: [], total: 0, status:'open', payment_type: null, paid: false, staff_username: state.staff.username,
     }});
-    if (!paid){
-      const c = customer(customerId) || (await sb('customers?id=eq.'+customerId+'&select=*'))[0];
-      await sb('customers?id=eq.'+customerId, { method:'PATCH', body:{ debt: Number(c.debt||0) + total } });
-    }
-    state.order = { customerId:null, customerQuery:'', items:[], itemName:'', itemPrice:'' };
-    await loadCustomers();
-    showToast('سفارش ثبت شد: ' + toman(total));
+    await loadOpenOrders();
+    closeModal();
   } finally {
     state.submitting = false;
     render();
   }
+}
+async function addItemToOpenOrder(orderId){
+  const m = state.modal;
+  const name = (m.itemName||'').trim();
+  const price = Number(m.itemPrice||0);
+  if (!name || !price){ showToast('نام و قیمت را وارد کنید'); return; }
+  const o = state.openOrders.find(x=>x.id===orderId);
+  if (!o) return;
+  const items = (o.items||[]).concat([{name, price}]);
+  const total = items.reduce((a,i)=>a+Number(i.price||0),0);
+  await sb('cafe_orders?id=eq.'+orderId, { method:'PATCH', body:{ items, total } });
+  await loadOpenOrders();
+  state.modal.itemName = '';
+  state.modal.itemPrice = '';
+  render();
+}
+async function removeItemFromOpenOrder(orderId, idx){
+  const o = state.openOrders.find(x=>x.id===orderId);
+  if (!o) return;
+  const items = (o.items||[]).slice();
+  items.splice(idx, 1);
+  const total = items.reduce((a,i)=>a+Number(i.price||0),0);
+  await sb('cafe_orders?id=eq.'+orderId, { method:'PATCH', body:{ items, total } });
+  await loadOpenOrders();
+  render();
+}
+async function settleOpenOrder(orderId, paymentType){
+  if (state.submitting) return;
+  const o = state.openOrders.find(x=>x.id===orderId);
+  if (!o) return;
+  if (!o.items || !o.items.length){ showToast('این سفارش هنوز آیتمی ندارد'); return; }
+  state.submitting = true; render();
+  try{
+    const paid = paymentType !== 'unpaid';
+    await sb('cafe_orders?id=eq.'+orderId, { method:'PATCH', body:{ status:'completed', payment_type: paymentType, paid } });
+    if (!paid){
+      const c = customer(o.customer_id) || (await sb('customers?id=eq.'+o.customer_id+'&select=*'))[0];
+      await sb('customers?id=eq.'+o.customer_id, { method:'PATCH', body:{ debt: Number(c.debt||0) + Number(o.total||0) } });
+    }
+    await Promise.all([loadOpenOrders(), loadHistory(), loadCustomers()]);
+    closeModal();
+    showToast('تسویه شد: ' + toman(o.total));
+  } finally {
+    state.submitting = false;
+    render();
+  }
+}
+async function cancelOpenOrder(orderId){
+  if (!isAdmin()) return;
+  if (!confirm('این سفارش باز لغو می‌شود (هیچ بدهی ثبت نشده بود). مطمئن هستید؟')) return;
+  await sb('cafe_orders?id=eq.'+orderId, { method:'DELETE' });
+  await loadOpenOrders();
+  closeModal();
+  showToast('سفارش لغو شد');
+  render();
 }
 
 // ---------- History actions ----------
@@ -285,6 +310,7 @@ async function bootApp(){
   state.loading = true; render();
   await safe(async ()=>{
     await loadCustomers();
+    await loadOpenOrders();
     await loadHistory();
   });
   state.loading = false;
@@ -296,6 +322,10 @@ async function bootApp(){
     if (ae && (ae.tagName==='INPUT' || ae.tagName==='TEXTAREA')) return;
     render();
   }, 5000);
+  setInterval(()=>{ if (state.staff) safe(async()=>{
+    await loadOpenOrders();
+    if (state.tab==='history') await loadHistory();
+  }); }, 7000);
 }
 
 // ---------- Render ----------
@@ -325,7 +355,7 @@ function renderTopbar(){
 }
 function renderBottomnav(){
   const tabs = [
-    ['order','🛒','سفارش جدید'],
+    ['order','🛒','سفارش‌های باز'],
     ['history','🧾','تاریخچه'],
   ];
   return `<div class="bottombar">${tabs.map(([id,ic,label])=>`
@@ -336,69 +366,30 @@ function renderBottomnav(){
 function setTab(t){
   state.tab = t;
   if (t==='history') safe(loadHistory);
+  if (t==='order') safe(loadOpenOrders);
   render();
 }
 
 function renderOrder(){
-  const m = state.order;
-  if (!m.customerId){
-    const query = m.customerQuery || '';
-    const filtered = state.customers.filter(c => !query || c.name.includes(query) || (c.code||'').includes(query) || (c.phone||'').includes(query));
-    return `
-    <div class="card">
-      <h3>انتخاب مشتری</h3>
-      <input type="text" placeholder="جستجو با نام، کد یا شماره..." value="${query}" oninput="state.order.customerQuery=this.value; render()">
-      <div style="max-height:260px;overflow:auto;margin-top:8px">
-        ${filtered.slice(0,30).map(c=>`
-          <div class="listitem row" style="cursor:pointer" onclick="selectOrderCustomer(${c.id})">
-            <span>${c.name} <span class="muted">${c.code}</span></span>
-            ${Number(c.debt)>0?`<span class="badge unpaid">بدهی: ${toman(c.debt)}</span>`:''}
-          </div>`).join('') || `<div class="muted">موردی پیدا نشد</div>`}
+  const cards = state.openOrders.map(o=>{
+    const c = customer(o.customer_id);
+    const itemsText = (o.items||[]).map(it=>it.name).join('، ');
+    return `<div class="card">
+      <div class="row">
+        <h3>${c? c.name+' ('+c.code+')' : '...'}</h3>
+        <span class="big">${toman(o.total)}</span>
       </div>
-      ${query && !filtered.some(c=>c.name===query) ? `
-        <button class="btn secondary block" style="margin-top:8px" ${state.submitting?'disabled':''} onclick="safe(async()=>{
-          if (state.submitting) return;
-          state.submitting = true; render();
-          try{
-            const c = await createCustomer(state.order.customerQuery, '');
-            selectOrderCustomer(c.id);
-          } finally {
-            state.submitting = false; render();
-          }
-        })">${state.submitting?'در حال ثبت...':'+ ثبت «'+query+'» به‌عنوان مشتری جدید'}</button>` : ''}
+      <div class="muted">${itemsText || 'آیتمی ثبت نشده'}</div>
+      <div class="row" style="margin-top:10px;gap:8px">
+        <button class="btn secondary small" style="flex:1" onclick="openModal({type:'addItem', orderId:${o.id}, itemName:'', itemPrice:''})">+ افزودن آیتم</button>
+        <button class="btn success small" style="flex:1" onclick="openModal({type:'settleOrder', orderId:${o.id}})">تسویه و بستن</button>
+      </div>
+      ${isAdmin() ? `<button class="btn danger small block" style="margin-top:6px" onclick="safe(()=>cancelOpenOrder(${o.id}))">لغو این سفارش</button>` : ''}
     </div>`;
-  }
-  const c = customer(m.customerId);
-  const total = m.items.reduce((a,i)=>a+Number(i.price||0),0);
+  }).join('') || `<div class="muted" style="padding:10px 0">سفارش بازی وجود ندارد</div>`;
   return `
-  <div class="card">
-    <div class="row">
-      <h3>${c? c.name+' ('+c.code+')' : '...'}</h3>
-      <button class="btn secondary small" onclick="changeOrderCustomer()">تغییر مشتری</button>
-    </div>
-    ${c && Number(c.debt)>0 ? `<div class="muted">بدهی فعلی: ${toman(c.debt)}</div>` : ''}
-  </div>
-  <div class="card">
-    <h3>آیتم‌های سفارش</h3>
-    ${m.items.map((it,idx)=>`
-      <div class="listitem row"><span>${it.name}</span>
-        <span>${toman(it.price)} <button class="btn danger small" onclick="removeOrderItem(${idx})">حذف</button></span>
-      </div>`).join('') || '<div class="muted">آیتمی ثبت نشده</div>'}
-    <label style="margin-top:12px">نام آیتم</label>
-    <input type="text" id="itemName" value="${m.itemName||''}" oninput="state.order.itemName=this.value">
-    <label style="margin-top:8px">قیمت (تومان)</label>
-    <input type="number" id="itemPrice" value="${m.itemPrice||''}" oninput="state.order.itemPrice=this.value">
-    <button class="btn block" style="margin-top:12px" onclick="addOrderItem()">افزودن آیتم</button>
-  </div>
-  <div class="card">
-    <div class="row"><span>جمع کل</span><span class="big">${toman(total)}</span></div>
-    <label style="margin-top:12px">نوع پرداخت</label>
-    <div class="col">
-      <button class="btn block" ${state.submitting?'disabled':''} onclick="safe(()=>checkoutOrder('card'))">💳 کارتخوان</button>
-      <button class="btn success block" ${state.submitting?'disabled':''} onclick="safe(()=>checkoutOrder('cash'))">💵 نقدی</button>
-      <button class="btn danger block" ${state.submitting?'disabled':''} onclick="safe(()=>checkoutOrder('unpaid'))">⏳ پرداخت‌نشده (بدهی)</button>
-    </div>
-  </div>`;
+    <button class="btn block" style="margin-bottom:12px" onclick="openModal({type:'newOrder', customerQuery:''})">+ باز کردن سفارش جدید</button>
+    ${cards}`;
 }
 
 function renderHistory(){
@@ -443,6 +434,59 @@ function renderModal(){
       <input type="password" id="newPass" value="${m.newPass||''}" oninput="state.modal.newPass=this.value">
       <button class="btn block" style="margin-top:10px" onclick="safe(()=>changePassword(state.modal.newPass||''))">تغییر رمز</button>
       <button class="btn danger block" style="margin-top:10px" onclick="logout(); closeModal();">خروج از حساب</button>`;
+  }
+  else if (m.type==='newOrder'){
+    const query = m.customerQuery || '';
+    const filtered = state.customers.filter(c => !query || c.name.includes(query) || (c.code||'').includes(query) || (c.phone||'').includes(query));
+    body = `
+      <div class="head"><h3>باز کردن سفارش جدید</h3><button class="closebtn" onclick="closeModal()">✕</button></div>
+      <label>انتخاب مشتری</label>
+      <input type="text" id="newOrderSearch" placeholder="جستجو با نام، کد یا شماره..." value="${query}" oninput="state.modal.customerQuery=this.value; render()">
+      <div style="max-height:260px;overflow:auto;margin-top:8px">
+        ${filtered.slice(0,30).map(c=>`
+          <div class="listitem row" style="cursor:pointer" onclick="safe(()=>startOpenOrder(${c.id}))">
+            <span>${c.name} <span class="muted">${c.code}</span></span>
+            ${Number(c.debt)>0?`<span class="badge unpaid">بدهی: ${toman(c.debt)}</span>`:''}
+          </div>`).join('') || `<div class="muted">موردی پیدا نشد</div>`}
+      </div>
+      ${query && !filtered.some(c=>c.name===query) ? `
+        <button class="btn secondary block" style="margin-top:8px" ${state.submitting?'disabled':''} onclick="safe(async()=>{
+          if (state.submitting) return;
+          state.submitting = true; render();
+          try{
+            const c = await createCustomer(state.modal.customerQuery, '');
+            await startOpenOrder(c.id);
+          } finally {
+            state.submitting = false; render();
+          }
+        })">${state.submitting?'در حال ثبت...':'+ ثبت «'+query+'» به‌عنوان مشتری جدید'}</button>` : ''}`;
+  }
+  else if (m.type==='addItem'){
+    const o = state.openOrders.find(x=>x.id===m.orderId);
+    const c = o ? customer(o.customer_id) : null;
+    body = `
+      <div class="head"><h3>${c? c.name+' ('+c.code+')' : 'سفارش'}</h3><button class="closebtn" onclick="closeModal()">✕</button></div>
+      ${o && o.items && o.items.length ? o.items.map((it,idx)=>`
+        <div class="listitem row"><span>${it.name}</span>
+          <span>${toman(it.price)} <button class="btn danger small" onclick="safe(()=>removeItemFromOpenOrder(${o.id}, ${idx}))">حذف</button></span>
+        </div>`).join('') : '<div class="muted">آیتمی ثبت نشده</div>'}
+      <label style="margin-top:12px">نام آیتم</label>
+      <input type="text" id="itemName" value="${m.itemName||''}" oninput="state.modal.itemName=this.value">
+      <label style="margin-top:8px">قیمت (تومان)</label>
+      <input type="number" id="itemPrice" value="${m.itemPrice||''}" oninput="state.modal.itemPrice=this.value">
+      <button class="btn block" style="margin-top:12px" onclick="safe(()=>addItemToOpenOrder(${m.orderId}))">افزودن آیتم</button>`;
+  }
+  else if (m.type==='settleOrder'){
+    const o = state.openOrders.find(x=>x.id===m.orderId);
+    const c = o ? customer(o.customer_id) : null;
+    body = `
+      <div class="head"><h3>تسویه — ${c? c.name : ''}</h3><button class="closebtn" onclick="closeModal()">✕</button></div>
+      <div class="muted" style="margin-bottom:10px">جمع کل: ${toman(o?o.total:0)}</div>
+      <div class="col">
+        <button class="btn block" ${state.submitting?'disabled':''} onclick="safe(()=>settleOpenOrder(${m.orderId}, 'card'))">💳 کارتخوان</button>
+        <button class="btn success block" ${state.submitting?'disabled':''} onclick="safe(()=>settleOpenOrder(${m.orderId}, 'cash'))">💵 نقدی</button>
+        <button class="btn danger block" ${state.submitting?'disabled':''} onclick="safe(()=>settleOpenOrder(${m.orderId}, 'unpaid'))">⏳ پرداخت‌نشده (بدهی)</button>
+      </div>`;
   }
   return `<div class="overlay" onclick="if(event.target===this) closeModal()"><div class="sheet">${body}</div></div>`;
 }
