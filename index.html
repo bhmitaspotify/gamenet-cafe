@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>کافه گیم‌نت</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#181b21; --elev:#20242c; --text:#eef1f5; --dim:#9aa3b2;
+    --accent:#7c5cff; --accent-2:#22c55e; --danger:#ef4444; --warning:#f59e0b; --border:#2a2f3a;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);}
+  body{font-family:Tahoma,Vazirmatn,system-ui,sans-serif;direction:rtl;padding-bottom:env(safe-area-inset-bottom);}
+  button,input,select{font-family:inherit;}
+  #root{min-height:100vh;}
+
+  .topbar{position:fixed;top:0;right:0;left:0;height:56px;background:var(--elev);border-bottom:1px solid var(--border);
+    display:flex;align-items:center;justify-content:space-between;padding:0 12px;z-index:20;}
+  .topbar .title{font-weight:bold;font-size:15px;}
+  .topbar .right{display:flex;align-items:center;gap:10px;}
+  .chip{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:6px 12px;font-size:12px;color:var(--dim);}
+  .chip b{color:var(--accent-2);}
+  .avatar{width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:bold;color:#fff;}
+
+  main{padding:68px 12px 78px;max-width:520px;margin:0 auto;}
+
+  .bottombar{position:fixed;bottom:0;right:0;left:0;height:60px;background:var(--elev);border-top:1px solid var(--border);
+    display:flex;z-index:20;padding-bottom:env(safe-area-inset-bottom);}
+  .navbtn{flex:1;background:none;border:none;color:var(--dim);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;padding:6px 0;}
+  .navbtn.active{color:var(--accent);}
+  .navbtn .ic{font-size:18px;}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px;}
+  .card h3{margin:0 0 8px;font-size:15px;}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .col{display:flex;flex-direction:column;gap:8px;}
+  .muted{color:var(--dim);font-size:12px;}
+  .big{font-size:22px;font-weight:bold;}
+
+  .btn{background:var(--accent);color:#fff;border:none;border-radius:10px;padding:10px 14px;font-size:13px;font-weight:bold;cursor:pointer;}
+  .btn.secondary{background:var(--elev);color:var(--text);border:1px solid var(--border);}
+  .btn.success{background:var(--accent-2);}
+  .btn.danger{background:var(--danger);}
+  .btn.warning{background:var(--warning);color:#1a1a1a;}
+  .btn.small{padding:6px 10px;font-size:12px;border-radius:8px;}
+  .btn.block{width:100%;}
+  .btn:disabled{opacity:.5;}
+
+  input[type=text],input[type=number],input[type=password],input[type=tel],select{
+    width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);
+    border-radius:10px;padding:10px 12px;font-size:14px;
+  }
+  label{font-size:12px;color:var(--dim);margin-bottom:4px;display:block;}
+
+  .badge{display:inline-block;padding:3px 8px;border-radius:8px;font-size:11px;font-weight:bold;}
+  .badge.card{background:#1e3a8a33;color:#93c5fd;}
+  .badge.cash{background:#145332d33;color:#86efac;}
+  .badge.unpaid{background:#7f1d1d33;color:#fca5a5;}
+  .badge.settled{background:#145332d33;color:#86efac;}
+
+  .overlay{position:fixed;inset:0;background:#000c;display:flex;align-items:flex-end;justify-content:center;z-index:50;}
+  .sheet{background:var(--card);border-radius:18px 18px 0 0;padding:16px;width:100%;max-width:520px;max-height:88vh;overflow:auto;}
+  .sheet .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+  .sheet .head h3{margin:0;}
+  .closebtn{background:var(--elev);border:1px solid var(--border);color:var(--text);border-radius:50%;width:30px;height:30px;font-size:14px;}
+
+  .listitem{border-bottom:1px solid var(--border);padding:10px 0;}
+  .listitem:last-child{border-bottom:none;}
+
+  .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .login-box{width:100%;max-width:360px;text-align:center;}
+  .login-box h1{font-size:22px;margin-bottom:4px;}
+  .login-box .sub{color:var(--dim);font-size:13px;margin-bottom:22px;}
+  .staffbtn{width:100%;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;font-size:15px;color:var(--text);display:flex;align-items:center;gap:12px;}
+
+  .toast{position:fixed;bottom:76px;right:50%;transform:translateX(50%);background:var(--elev);border:1px solid var(--border);
+    color:var(--text);padding:10px 16px;border-radius:10px;font-size:13px;z-index:99;max-width:90vw;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const SUPABASE_URL = 'https://owlajemxuxtmbehljwcd.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im93bGFqZW14dXh0bWJlaGxqd2NkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkyMTU5NjcsImV4cCI6MjEwNDc5MTk2N30.FgcrxA5hvh5-AqX9s17fyWf_-1MYefswo8Bo1iqbQFI';
+
+async function sb(path, opts){
+  opts = opts || {};
+  const method = opts.method || 'GET';
+  const headers = {
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
+    'Content-Type': 'application/json',
+  };
+  if (method !== 'GET') headers['Prefer'] = 'return=representation';
+  let res;
+  try{
+    res = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
+      method, headers, body: opts.body ? JSON.stringify(opts.body) : undefined
+    });
+  }catch(e){
+    throw new Error('اتصال به اینترنت برقرار نیست');
+  }
+  if (!res.ok){
+    const t = await res.text().catch(()=> '');
+    throw new Error('خطا: ' + res.status + ' ' + t);
+  }
+  if (res.status === 204) return null;
+  const txt = await res.text();
+  return txt ? JSON.parse(txt) : null;
+}
+function enc(s){ return encodeURIComponent(s); }
+function toman(n){ return Math.round(n||0).toLocaleString('en-US') + ' تومان'; }
+function fmtDate(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString('fa-IR') + ' ' + d.toLocaleTimeString('fa-IR', {hour:'2-digit', minute:'2-digit'});
+}
+
+function loadStoredStaff(){
+  let s = null;
+  try{ s = JSON.parse(localStorage.getItem('gnc_staff') || 'null'); }catch(e){}
+  if (!s || !s.username || !s.display_name){ localStorage.removeItem('gnc_staff'); return null; }
+  return s;
+}
+const state = {
+  staff: loadStoredStaff(),
+  tab: 'order',
+  customers: [],
+  history: [],
+  order: { customerId: null, customerQuery: '', items: [], itemName:'', itemPrice:'' },
+  loading: false,
+  modal: null,
+  toast: null,
+  submitting: false,
+};
+
+function showToast(msg){
+  state.toast = msg;
+  render();
+  setTimeout(()=>{ state.toast = null; render(); }, 2500);
+}
+async function safe(fn){
+  try{ await fn(); }
+  catch(e){ showToast(e.message || 'خطا رخ داد'); }
+}
+
+async function loadCustomers(search){
+  let q = 'customers?select=*&order=created_at.desc&limit=200';
+  if (search) q += '&or=(name.ilike.*' + enc(search) + '*,code.ilike.*' + enc(search) + '*,phone.ilike.*' + enc(search) + '*)';
+  state.customers = await sb(q);
+}
+async function loadHistory(){
+  state.history = await sb('cafe_orders?select=*&order=created_at.desc&limit=200');
+}
+function customer(id){ return state.customers.find(c => String(c.id) === String(id)); }
+function isAdmin(){ return !!state.staff && state.staff.username === 'arvin'; }
+
+// ---------- Auth ----------
+async function login(username, password){
+  const rows = await sb('staff?username=eq.' + enc(username) + '&password=eq.' + enc(password) + '&select=*');
+  if (!rows.length){ showToast('نام کاربری یا رمز اشتباه است'); return; }
+  state.staff = rows[0];
+  localStorage.setItem('gnc_staff', JSON.stringify(rows[0]));
+  await bootApp();
+}
+function logout(){
+  state.staff = null;
+  localStorage.removeItem('gnc_staff');
+  render();
+}
+async function changePassword(newPass){
+  await sb('staff?username=eq.' + enc(state.staff.username), { method:'PATCH', body:{ password:newPass } });
+  state.staff.password = newPass;
+  localStorage.setItem('gnc_staff', JSON.stringify(state.staff));
+  showToast('رمز عوض شد');
+  closeModal();
+}
+
+// ---------- Customer helpers (shared with گیم‌نت) ----------
+async function nextCustomerCode(){
+  const rows = await sb('customers?select=code&limit=1000');
+  let maxN = 0;
+  for (const r of rows){
+    const match = /^M-(\d+)$/.exec(r.code);
+    if (match) maxN = Math.max(maxN, parseInt(match[1], 10));
+  }
+  return 'M-' + String(maxN+1).padStart(4,'0');
+}
+async function createCustomer(name, phone){
+  for (let attempt=0; attempt<3; attempt++){
+    const code = await nextCustomerCode();
+    try{
+      const rows = await sb('customers', { method:'POST', body:{ name, phone: phone||null, code } });
+      await loadCustomers();
+      return rows[0];
+    }catch(e){
+      if (String(e.message).includes('23505') && attempt<2) continue;
+      throw e;
+    }
+  }
+}
+
+// ---------- Order (cart) actions ----------
+function selectOrderCustomer(id){
+  state.order.customerId = id;
+  state.order.customerQuery = '';
+  render();
+}
+function changeOrderCustomer(){
+  state.order.customerId = null;
+  render();
+}
+function addOrderItem(){
+  const name = (state.order.itemName||'').trim();
+  const price = Number(state.order.itemPrice||0);
+  if (!name || !price){ showToast('نام و قیمت را وارد کنید'); return; }
+  state.order.items.push({ name, price });
+  state.order.itemName = '';
+  state.order.itemPrice = '';
+  render();
+}
+function removeOrderItem(idx){
+  state.order.items.splice(idx, 1);
+  render();
+}
+async function checkoutOrder(paymentType){
+  if (state.submitting) return;
+  const items = state.order.items;
+  if (!items.length){ showToast('حداقل یک آیتم اضافه کنید'); return; }
+  const customerId = state.order.customerId;
+  if (!customerId){ showToast('مشتری را انتخاب کنید'); return; }
+  const total = items.reduce((a,i)=>a+Number(i.price||0),0);
+  state.submitting = true; render();
+  try{
+    const paid = paymentType !== 'unpaid';
+    await sb('cafe_orders', { method:'POST', body:{
+      customer_id: customerId, items, total, payment_type: paymentType, paid, staff_username: state.staff.username,
+    }});
+    if (!paid){
+      const c = customer(customerId) || (await sb('customers?id=eq.'+customerId+'&select=*'))[0];
+      await sb('customers?id=eq.'+customerId, { method:'PATCH', body:{ debt: Number(c.debt||0) + total } });
+    }
+    state.order = { customerId:null, customerQuery:'', items:[], itemName:'', itemPrice:'' };
+    await loadCustomers();
+    showToast('سفارش ثبت شد: ' + toman(total));
+  } finally {
+    state.submitting = false;
+    render();
+  }
+}
+
+// ---------- History actions ----------
+async function settleCafeOrder(orderId){
+  const o = state.history.find(x=>x.id===orderId);
+  if (!o) return;
+  await sb('cafe_orders?id=eq.'+orderId, { method:'PATCH', body:{ paid:true } });
+  const c = (await sb('customers?id=eq.'+o.customer_id+'&select=*'))[0];
+  if (c) await sb('customers?id=eq.'+o.customer_id, { method:'PATCH', body:{ debt: Math.max(0, Number(c.debt||0) - Number(o.total||0)) } });
+  await Promise.all([loadHistory(), loadCustomers()]);
+  showToast('تسویه شد');
+  render();
+}
+async function deleteCafeOrder(orderId){
+  if (!isAdmin()) return;
+  if (!confirm('این سفارش برای همیشه حذف می‌شود. مطمئن هستید؟')) return;
+  const rows = await sb('cafe_orders?id=eq.'+orderId+'&select=*');
+  const o = rows[0];
+  if (!o){ showToast('سفارش پیدا نشد'); return; }
+  if (!o.paid){
+    const c = (await sb('customers?id=eq.'+o.customer_id+'&select=*'))[0];
+    if (c) await sb('customers?id=eq.'+o.customer_id, { method:'PATCH', body:{ debt: Math.max(0, Number(c.debt||0) - Number(o.total||0)) } });
+  }
+  await sb('cafe_orders?id=eq.'+orderId, { method:'DELETE' });
+  await Promise.all([loadHistory(), loadCustomers()]);
+  showToast('سفارش حذف شد');
+  render();
+}
+
+// ---------- Modal helpers ----------
+function openModal(m){ state.modal = m; render(); }
+function closeModal(){ state.modal = null; render(); }
+
+// ---------- Boot ----------
+async function bootApp(){
+  state.loading = true; render();
+  await safe(async ()=>{
+    await loadCustomers();
+    await loadHistory();
+  });
+  state.loading = false;
+  render();
+  setInterval(()=>{
+    if (!state.staff) return;
+    if (state.modal) return;
+    const ae = document.activeElement;
+    if (ae && (ae.tagName==='INPUT' || ae.tagName==='TEXTAREA')) return;
+    render();
+  }, 5000);
+}
+
+// ---------- Render ----------
+function renderLogin(){
+  return `
+  <div class="login-wrap"><div class="login-box">
+    <h1>☕ کافه گیم‌نت</h1>
+    <div class="sub">بخش سفارش کافه</div>
+    <button class="staffbtn" onclick="openModal({type:'login', user:'arvin'})">
+      <span class="avatar">ا</span> اروین
+    </button>
+    <button class="staffbtn" onclick="openModal({type:'login', user:'parsa'})">
+      <span class="avatar">پ</span> پارسا
+    </button>
+  </div></div>`;
+}
+
+function renderTopbar(){
+  return `
+  <div class="topbar">
+    <div class="right">
+      <div class="avatar" onclick="openModal({type:'profile'})">${state.staff.display_name[0]}</div>
+      <div class="title">${state.staff.display_name}</div>
+    </div>
+    <div class="chip">کافه گیم‌نت</div>
+  </div>`;
+}
+function renderBottomnav(){
+  const tabs = [
+    ['order','🛒','سفارش جدید'],
+    ['history','🧾','تاریخچه'],
+  ];
+  return `<div class="bottombar">${tabs.map(([id,ic,label])=>`
+    <button class="navbtn ${state.tab===id?'active':''}" onclick="setTab('${id}')">
+      <span class="ic">${ic}</span><span>${label}</span>
+    </button>`).join('')}</div>`;
+}
+function setTab(t){
+  state.tab = t;
+  if (t==='history') safe(loadHistory);
+  render();
+}
+
+function renderOrder(){
+  const m = state.order;
+  if (!m.customerId){
+    const query = m.customerQuery || '';
+    const filtered = state.customers.filter(c => !query || c.name.includes(query) || (c.code||'').includes(query) || (c.phone||'').includes(query));
+    return `
+    <div class="card">
+      <h3>انتخاب مشتری</h3>
+      <input type="text" placeholder="جستجو با نام، کد یا شماره..." value="${query}" oninput="state.order.customerQuery=this.value; render()">
+      <div style="max-height:260px;overflow:auto;margin-top:8px">
+        ${filtered.slice(0,30).map(c=>`
+          <div class="listitem row" style="cursor:pointer" onclick="selectOrderCustomer(${c.id})">
+            <span>${c.name} <span class="muted">${c.code}</span></span>
+            ${Number(c.debt)>0?`<span class="badge unpaid">بدهی: ${toman(c.debt)}</span>`:''}
+          </div>`).join('') || `<div class="muted">موردی پیدا نشد</div>`}
+      </div>
+      ${query && !filtered.some(c=>c.name===query) ? `
+        <button class="btn secondary block" style="margin-top:8px" ${state.submitting?'disabled':''} onclick="safe(async()=>{
+          if (state.submitting) return;
+          state.submitting = true; render();
+          try{
+            const c = await createCustomer(state.order.customerQuery, '');
+            selectOrderCustomer(c.id);
+          } finally {
+            state.submitting = false; render();
+          }
+        })">${state.submitting?'در حال ثبت...':'+ ثبت «'+query+'» به‌عنوان مشتری جدید'}</button>` : ''}
+    </div>`;
+  }
+  const c = customer(m.customerId);
+  const total = m.items.reduce((a,i)=>a+Number(i.price||0),0);
+  return `
+  <div class="card">
+    <div class="row">
+      <h3>${c? c.name+' ('+c.code+')' : '...'}</h3>
+      <button class="btn secondary small" onclick="changeOrderCustomer()">تغییر مشتری</button>
+    </div>
+    ${c && Number(c.debt)>0 ? `<div class="muted">بدهی فعلی: ${toman(c.debt)}</div>` : ''}
+  </div>
+  <div class="card">
+    <h3>آیتم‌های سفارش</h3>
+    ${m.items.map((it,idx)=>`
+      <div class="listitem row"><span>${it.name}</span>
+        <span>${toman(it.price)} <button class="btn danger small" onclick="removeOrderItem(${idx})">حذف</button></span>
+      </div>`).join('') || '<div class="muted">آیتمی ثبت نشده</div>'}
+    <label style="margin-top:12px">نام آیتم</label>
+    <input type="text" id="itemName" value="${m.itemName||''}" oninput="state.order.itemName=this.value">
+    <label style="margin-top:8px">قیمت (تومان)</label>
+    <input type="number" id="itemPrice" value="${m.itemPrice||''}" oninput="state.order.itemPrice=this.value">
+    <button class="btn block" style="margin-top:12px" onclick="addOrderItem()">افزودن آیتم</button>
+  </div>
+  <div class="card">
+    <div class="row"><span>جمع کل</span><span class="big">${toman(total)}</span></div>
+    <label style="margin-top:12px">نوع پرداخت</label>
+    <div class="col">
+      <button class="btn block" ${state.submitting?'disabled':''} onclick="safe(()=>checkoutOrder('card'))">💳 کارتخوان</button>
+      <button class="btn success block" ${state.submitting?'disabled':''} onclick="safe(()=>checkoutOrder('cash'))">💵 نقدی</button>
+      <button class="btn danger block" ${state.submitting?'disabled':''} onclick="safe(()=>checkoutOrder('unpaid'))">⏳ پرداخت‌نشده (بدهی)</button>
+    </div>
+  </div>`;
+}
+
+function renderHistory(){
+  const rows = state.history.map(o=>{
+    const c = customer(o.customer_id);
+    const badgeClass = o.payment_type==='card'?'card':(o.payment_type==='cash'?'cash':(o.paid?'settled':'unpaid'));
+    const badgeText = o.payment_type==='card'?'کارتخوان':(o.payment_type==='cash'?'نقدی':(o.paid?'تسویه‌شده':'پرداخت‌نشده'));
+    const itemsText = (o.items||[]).map(it=>it.name).join('، ');
+    return `<div class="listitem">
+      <div class="row">
+        <b>${c? c.name+' ('+c.code+')' : '...'}</b>
+        <span class="muted">${fmtDate(o.created_at)}</span>
+      </div>
+      <div class="muted">${itemsText}</div>
+      <div class="row" style="margin-top:6px">
+        <span class="badge ${badgeClass}">${badgeText}</span>
+        <b>${toman(o.total)}</b>
+      </div>
+      ${(!o.paid) ? `<button class="btn warning small block" style="margin-top:8px" onclick="safe(()=>settleCafeOrder(${o.id}))">علامت‌گذاری به‌عنوان تسویه‌شده</button>` : ''}
+      ${isAdmin() ? `<button class="btn danger small block" style="margin-top:6px" onclick="safe(()=>deleteCafeOrder(${o.id}))">حذف این سفارش</button>` : ''}
+    </div>`;
+  }).join('') || `<div class="muted">سفارشی ثبت نشده</div>`;
+  return `<div class="card">${rows}</div>`;
+}
+
+function renderModal(){
+  const m = state.modal;
+  if (!m) return '';
+  let body = '';
+  if (m.type==='login'){
+    const label = m.user==='arvin' ? 'اروین' : 'پارسا';
+    body = `
+      <div class="head"><h3>ورود ${label}</h3><button class="closebtn" onclick="closeModal()">✕</button></div>
+      <label>رمز عبور</label>
+      <input type="password" id="loginPass" value="${m.pass||''}" oninput="state.modal.pass=this.value">
+      <button class="btn block" style="margin-top:12px" onclick="safe(()=>login('${m.user}', state.modal.pass||''))">ورود</button>`;
+  }
+  else if (m.type==='profile'){
+    body = `
+      <div class="head"><h3>${state.staff.display_name}</h3><button class="closebtn" onclick="closeModal()">✕</button></div>
+      <label>رمز جدید</label>
+      <input type="password" id="newPass" value="${m.newPass||''}" oninput="state.modal.newPass=this.value">
+      <button class="btn block" style="margin-top:10px" onclick="safe(()=>changePassword(state.modal.newPass||''))">تغییر رمز</button>
+      <button class="btn danger block" style="margin-top:10px" onclick="logout(); closeModal();">خروج از حساب</button>`;
+  }
+  return `<div class="overlay" onclick="if(event.target===this) closeModal()"><div class="sheet">${body}</div></div>`;
+}
+
+function render(){
+  const root = document.getElementById('root');
+  const ae = document.activeElement;
+  const isTyping = ae && root.contains(ae) && (ae.tagName==='INPUT' || ae.tagName==='TEXTAREA');
+  const focusInfo = isTyping ? { id: ae.id, start: ae.selectionStart, end: ae.selectionEnd } : null;
+
+  if (!state.staff){
+    root.innerHTML = renderLogin() + renderModal();
+  } else {
+    let content = '';
+    if (state.loading) content = '<div class="muted" style="padding:20px;text-align:center">در حال بارگذاری...</div>';
+    else if (state.tab==='order') content = renderOrder();
+    else if (state.tab==='history') content = renderHistory();
+
+    root.innerHTML = `
+      ${renderTopbar()}
+      <main>${content}</main>
+      ${renderBottomnav()}
+      ${renderModal()}
+      ${state.toast ? `<div class="toast">${state.toast}</div>` : ''}
+    `;
+  }
+
+  if (focusInfo && focusInfo.id){
+    const el = document.getElementById(focusInfo.id);
+    if (el){
+      el.focus({ preventScroll: true });
+      if (typeof focusInfo.start === 'number'){
+        try{ el.setSelectionRange(focusInfo.start, focusInfo.end); }catch(e){}
+      }
+    }
+  }
+}
+
+render();
+if (state.staff) bootApp();
+</script>
+</body>
+</html>
