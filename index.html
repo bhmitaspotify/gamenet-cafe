@@ -300,6 +300,43 @@ async function deleteCafeOrder(orderId){
   showToast('سفارش حذف شد');
   render();
 }
+async function adjustDebtForOrderTotalChange(o, oldTotal, newTotal){
+  if (o.paid) return;
+  const c = (await sb('customers?id=eq.'+o.customer_id+'&select=*'))[0];
+  if (!c) return;
+  await sb('customers?id=eq.'+o.customer_id, { method:'PATCH', body:{ debt: Math.max(0, Number(c.debt||0) - oldTotal + newTotal) } });
+}
+async function addItemToHistoryOrder(orderId){
+  if (!isAdmin()) return;
+  const m = state.modal;
+  const name = (m.itemName||'').trim();
+  const price = Number(m.itemPrice||0);
+  if (!name || !price){ showToast('نام و قیمت را وارد کنید'); return; }
+  const o = state.history.find(x=>x.id===orderId);
+  if (!o) return;
+  const oldTotal = Number(o.total||0);
+  const items = (o.items||[]).concat([{name, price}]);
+  const newTotal = items.reduce((a,i)=>a+Number(i.price||0),0);
+  await sb('cafe_orders?id=eq.'+orderId, { method:'PATCH', body:{ items, total: newTotal } });
+  await adjustDebtForOrderTotalChange(o, oldTotal, newTotal);
+  await Promise.all([loadHistory(), loadCustomers()]);
+  state.modal.itemName = '';
+  state.modal.itemPrice = '';
+  render();
+}
+async function removeItemFromHistoryOrder(orderId, idx){
+  if (!isAdmin()) return;
+  const o = state.history.find(x=>x.id===orderId);
+  if (!o) return;
+  const oldTotal = Number(o.total||0);
+  const items = (o.items||[]).slice();
+  items.splice(idx, 1);
+  const newTotal = items.reduce((a,i)=>a+Number(i.price||0),0);
+  await sb('cafe_orders?id=eq.'+orderId, { method:'PATCH', body:{ items, total: newTotal } });
+  await adjustDebtForOrderTotalChange(o, oldTotal, newTotal);
+  await Promise.all([loadHistory(), loadCustomers()]);
+  render();
+}
 
 // ---------- Modal helpers ----------
 function openModal(m){ state.modal = m; render(); }
@@ -409,6 +446,7 @@ function renderHistory(){
         <b>${toman(o.total)}</b>
       </div>
       ${(!o.paid) ? `<button class="btn warning small block" style="margin-top:8px" onclick="safe(()=>settleCafeOrder(${o.id}))">علامت‌گذاری به‌عنوان تسویه‌شده</button>` : ''}
+      ${isAdmin() ? `<button class="btn secondary small block" style="margin-top:6px" onclick="openModal({type:'editHistoryOrder', orderId:${o.id}, itemName:'', itemPrice:''})">ویرایش این سفارش</button>` : ''}
       ${isAdmin() ? `<button class="btn danger small block" style="margin-top:6px" onclick="safe(()=>deleteCafeOrder(${o.id}))">حذف این سفارش</button>` : ''}
     </div>`;
   }).join('') || `<div class="muted">سفارشی ثبت نشده</div>`;
@@ -475,6 +513,21 @@ function renderModal(){
       <label style="margin-top:8px">قیمت (تومان)</label>
       <input type="number" id="itemPrice" value="${m.itemPrice||''}" oninput="state.modal.itemPrice=this.value">
       <button class="btn block" style="margin-top:12px" onclick="safe(()=>addItemToOpenOrder(${m.orderId}))">افزودن آیتم</button>`;
+  }
+  else if (m.type==='editHistoryOrder'){
+    const o = state.history.find(x=>x.id===m.orderId);
+    const c = o ? customer(o.customer_id) : null;
+    body = `
+      <div class="head"><h3>ویرایش — ${c? c.name+' ('+c.code+')' : 'سفارش'}</h3><button class="closebtn" onclick="closeModal()">✕</button></div>
+      ${o && o.items && o.items.length ? o.items.map((it,idx)=>`
+        <div class="listitem row"><span>${it.name}</span>
+          <span>${toman(it.price)} <button class="btn danger small" onclick="safe(()=>removeItemFromHistoryOrder(${o.id}, ${idx}))">حذف</button></span>
+        </div>`).join('') : '<div class="muted">آیتمی ثبت نشده</div>'}
+      <label style="margin-top:12px">نام آیتم</label>
+      <input type="text" id="editItemName" value="${m.itemName||''}" oninput="state.modal.itemName=this.value">
+      <label style="margin-top:8px">قیمت (تومان)</label>
+      <input type="number" id="editItemPrice" value="${m.itemPrice||''}" oninput="state.modal.itemPrice=this.value">
+      <button class="btn block" style="margin-top:12px" onclick="safe(()=>addItemToHistoryOrder(${m.orderId}))">افزودن آیتم</button>`;
   }
   else if (m.type==='settleOrder'){
     const o = state.openOrders.find(x=>x.id===m.orderId);
